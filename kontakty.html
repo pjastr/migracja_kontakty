@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>VCF → CSV Konwerter</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      background: #f0f2f5;
+      color: #333;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    header {
+      background: #1a73e8;
+      color: #fff;
+      padding: 16px 32px;
+      font-size: 1.2rem;
+      font-weight: 600;
+      letter-spacing: .5px;
+    }
+
+    main {
+      display: flex;
+      flex: 1;
+      gap: 0;
+    }
+
+    /* ── PANEL ── */
+    .panel {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      padding: 28px;
+      gap: 16px;
+    }
+
+    .panel + .panel {
+      border-left: 2px solid #d0d7de;
+    }
+
+    .panel h2 {
+      font-size: 1rem;
+      font-weight: 600;
+      color: #555;
+      text-transform: uppercase;
+      letter-spacing: .8px;
+    }
+
+    /* ── DROP ZONE ── */
+    .drop-zone {
+      border: 2px dashed #1a73e8;
+      border-radius: 12px;
+      padding: 40px 20px;
+      text-align: center;
+      cursor: pointer;
+      transition: background .2s;
+      background: #fff;
+      color: #666;
+    }
+
+    .drop-zone:hover, .drop-zone.over {
+      background: #e8f0fe;
+    }
+
+    .drop-zone input[type="file"] {
+      display: none;
+    }
+
+    .drop-zone .icon {
+      font-size: 3rem;
+      margin-bottom: 10px;
+    }
+
+    .drop-zone p { margin-top: 6px; font-size: .9rem; }
+
+    /* ── TABLE ── */
+    .table-wrap {
+      overflow: auto;
+      flex: 1;
+      background: #fff;
+      border-radius: 10px;
+      border: 1px solid #d0d7de;
+    }
+
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      font-size: .85rem;
+    }
+
+    thead tr { background: #1a73e8; color: #fff; position: sticky; top: 0; }
+    th, td { padding: 8px 12px; text-align: left; border-bottom: 1px solid #e8eaed; }
+    tbody tr:hover { background: #f6f8fa; }
+
+    /* ── STATS ── */
+    .stats {
+      font-size: .85rem;
+      color: #666;
+    }
+
+    /* ── CSV OUTPUT ── */
+    .csv-box {
+      flex: 1;
+      font-family: monospace;
+      font-size: .8rem;
+      padding: 14px;
+      border: 1px solid #d0d7de;
+      border-radius: 10px;
+      background: #fff;
+      resize: none;
+      outline: none;
+      white-space: pre;
+      overflow: auto;
+      color: #333;
+    }
+
+    /* ── BUTTONS ── */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 22px;
+      border: none;
+      border-radius: 8px;
+      font-size: .9rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity .15s, transform .1s;
+    }
+
+    .btn:active { transform: scale(.97); }
+    .btn:disabled { opacity: .4; cursor: not-allowed; }
+
+    .btn-primary { background: #1a73e8; color: #fff; }
+    .btn-primary:not(:disabled):hover { background: #1558b0; }
+
+    .btn-success { background: #2e7d32; color: #fff; }
+    .btn-success:not(:disabled):hover { background: #1b5e20; }
+
+    .btn-danger  { background: #c62828; color: #fff; }
+    .btn-danger:not(:disabled):hover  { background: #8e0000; }
+
+    .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+
+    /* ── EMPTY STATE ── */
+    .empty {
+      text-align: center;
+      padding: 40px;
+      color: #aaa;
+      font-size: .9rem;
+    }
+  </style>
+</head>
+<body>
+
+<header>📇 VCF → CSV Konwerter</header>
+
+<main>
+  <!-- ════════════ LEWA STRONA ════════════ -->
+  <section class="panel" id="leftPanel">
+    <h2>1. Załaduj plik VCF</h2>
+
+    <div class="drop-zone" id="dropZone">
+      <div class="icon">📂</div>
+      <strong>Przeciągnij plik .vcf tutaj</strong>
+      <p>lub kliknij, aby wybrać</p>
+      <input type="file" id="fileInput" accept=".vcf,text/vcard" />
+    </div>
+
+    <div class="row">
+      <button class="btn btn-primary" onclick="document.getElementById('fileInput').click()">Wybierz plik</button>
+      <button class="btn btn-danger" id="clearBtn" onclick="clearAll()" disabled>Wyczyść</button>
+      <span class="stats" id="stats"></span>
+    </div>
+
+    <div class="table-wrap">
+      <div class="empty" id="emptyLeft">Brak załadowanych kontaktów</div>
+      <table id="contactTable" style="display:none">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>First Name</th>
+            <th>Last Name</th>
+            <th>Mobile Phone</th>
+            <th>Business Phone</th>
+            <th>Home Phone</th>
+            <th>E-mail Address</th>
+            <th>Company</th>
+            <th>Job Title</th>
+          </tr>
+        </thead>
+        <tbody id="contactBody"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ════════════ PRAWA STRONA ════════════ -->
+  <section class="panel" id="rightPanel">
+    <h2>2. Eksport CSV</h2>
+
+    <div class="row">
+      <button class="btn btn-success" id="downloadBtn" onclick="downloadCSV()" disabled>⬇ Pobierz CSV</button>
+      <button class="btn btn-primary" id="copyBtn" onclick="copyCSV()" disabled>📋 Kopiuj</button>
+    </div>
+
+    <textarea class="csv-box" id="csvOutput" readonly placeholder="Podgląd CSV pojawi się tutaj po załadowaniu pliku VCF…"></textarea>
+  </section>
+</main>
+
+<script>
+  /* ── GLOBALS ── */
+  let contacts = [];
+
+  /* ── DRAG & DROP ── */
+  const dropZone = document.getElementById('dropZone');
+
+  dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('over'); });
+  dropZone.addEventListener('dragleave', () => dropZone.classList.remove('over'));
+  dropZone.addEventListener('drop', e => {
+    e.preventDefault();
+    dropZone.classList.remove('over');
+    const file = e.dataTransfer.files[0];
+    if (file) handleFile(file);
+  });
+  dropZone.addEventListener('click', () => document.getElementById('fileInput').click());
+
+  document.getElementById('fileInput').addEventListener('change', e => {
+    if (e.target.files[0]) handleFile(e.target.files[0]);
+  });
+
+  /* ── FILE HANDLER ── */
+  function handleFile(file) {
+    const reader = new FileReader();
+    reader.onload = ev => {
+      contacts = parseVCF(ev.target.result);
+      renderTable();
+      renderCSV();
+    };
+    reader.readAsText(file, 'UTF-8');
+  }
+
+  /* ── VCF PARSER ── */
+  function parseVCF(text) {
+    // unfold RFC 6350 line folding
+    text = text.replace(/\r\n[ \t]/g, '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+
+    const cards = text.split(/BEGIN:VCARD/i).slice(1);
+    return cards.map(card => {
+      const get = (re) => { const m = card.match(re); return m ? m[1].trim() : ''; };
+
+      // Structured name: N:Last;First;Middle;Prefix;Suffix
+      let firstName = '', lastName = '', middleName = '';
+      const nRaw = get(/^N(?:[^:]*)?:(.*)/im);
+      if (nRaw) {
+        const p = nRaw.split(';');
+        lastName   = (p[0] || '').trim();
+        firstName  = (p[1] || '').trim();
+        middleName = (p[2] || '').trim();
+      }
+
+      // FN fallback: if N didn't give us names, split FN
+      if (!firstName && !lastName) {
+        const fn = get(/^FN(?:[^:]*)?:(.*)/im);
+        const parts = fn.trim().split(/\s+/);
+        firstName = parts[0] || '';
+        lastName  = parts.slice(1).join(' ');
+      }
+
+      // Phones — classify by TYPE
+      let mobile = '', business = '', home = '', otherPhones = [];
+      const telLines = [...card.matchAll(/^(TEL[^:\r\n]*):([^\r\n]*)/gim)];
+      for (const [, prop, val] of telLines) {
+        const num = val.trim().replace(/\s+/g, '');
+        if (!num) continue;
+        const t = prop.toUpperCase();
+        const isMobile   = /CELL|MOBILE/.test(t);
+        const isWork     = /WORK/.test(t);
+        const isHome     = /HOME/.test(t);
+        if      (isMobile  && !mobile)   mobile   = num;
+        else if (isWork    && !business) business = num;
+        else if (isHome    && !home)     home     = num;
+        else otherPhones.push(num);
+      }
+      // fallback: first unclassified phone → mobile
+      if (!mobile && !business && !home && otherPhones.length) {
+        mobile = otherPhones.shift();
+      }
+
+      // Emails
+      const emailMatches = [...card.matchAll(/^EMAIL(?:[^:]*)?:(.*)/gim)];
+      const email1 = emailMatches[0] ? emailMatches[0][1].trim() : '';
+      const email2 = emailMatches[1] ? emailMatches[1][1].trim() : '';
+      const email3 = emailMatches[2] ? emailMatches[2][1].trim() : '';
+
+      // Company & title
+      const org   = get(/^ORG(?:[^:]*)?:(.*)/im).split(';')[0].trim();
+      const title = get(/^TITLE(?:[^:]*)?:(.*)/im);
+
+      // Notes
+      const note = get(/^NOTE(?:[^:]*)?:(.*)/im).replace(/\\n/g, ' ');
+
+      // Address (Business)
+      const adrMatch = card.match(/^ADR(?:[^:]*WORK[^:]*)?:(.*)/im);
+      let bStreet = '', bCity = '', bState = '', bZip = '', bCountry = '';
+      if (adrMatch) {
+        const a = adrMatch[1].split(';');
+        // PO Box; Extended; Street; City; State; ZIP; Country
+        bStreet  = [a[1], a[2]].filter(Boolean).join(', ');
+        bCity    = a[3] || '';
+        bState   = a[4] || '';
+        bZip     = a[5] || '';
+        bCountry = a[6] || '';
+      }
+
+      return {
+        firstName, lastName, middleName,
+        mobile, business, home,
+        email1, email2, email3,
+        org, title, note,
+        bStreet, bCity, bState, bZip, bCountry
+      };
+    }).filter(c => c.firstName || c.lastName || c.mobile || c.business || c.email1);
+  }
+
+  /* ── RENDER TABLE ── */
+  function renderTable() {
+    const tbody = document.getElementById('contactBody');
+    tbody.innerHTML = '';
+
+    contacts.forEach((c, i) => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${i + 1}</td>
+        <td>${esc(c.firstName)}</td>
+        <td>${esc(c.lastName)}</td>
+        <td>${esc(c.mobile)}</td>
+        <td>${esc(c.business)}</td>
+        <td>${esc(c.home)}</td>
+        <td>${esc(c.email1)}</td>
+        <td>${esc(c.org)}</td>
+        <td>${esc(c.title)}</td>
+      `;
+      tbody.appendChild(tr);
+    });
+
+    const hasData = contacts.length > 0;
+    document.getElementById('contactTable').style.display = hasData ? '' : 'none';
+    document.getElementById('emptyLeft').style.display = hasData ? 'none' : '';
+    document.getElementById('stats').textContent = hasData ? `Znaleziono: ${contacts.length} kontaktów` : '';
+    document.getElementById('clearBtn').disabled = !hasData;
+  }
+
+  // Outlook CSV column order (new Outlook / Microsoft 365 compatible)
+  const OUTLOOK_HEADERS = [
+    'First Name','Middle Name','Last Name','Title','Suffix','Nickname',
+    'Given Yomi','Surname Yomi','E-mail Address','E-mail 2 Address','E-mail 3 Address',
+    'Home Phone','Home Phone 2','Business Phone','Business Phone 2','Mobile Phone',
+    'Car Phone','Other Phone','Primary Phone','Pager',
+    'Business Fax','Home Fax','Other Fax','Company Main Phone',
+    'Callback','Radio Phone','Telex','TTY/TDD Phone','IMAddress',
+    'Job Title','Department','Company','Office Location',
+    "Manager's Name","Assistant's Name","Assistant's Phone","Company Yomi",
+    'Business Street','Business City','Business State','Business Postal Code','Business Country/Region',
+    'Home Street','Home City','Home State','Home Postal Code','Home Country/Region',
+    'Other Street','Other City','Other State','Other Postal Code','Other Country/Region',
+    'Personal Web Page','Spouse','Schools','Hobby','Location','Web Page',
+    'Birthday','Anniversary','Notes','Categories'
+  ];
+
+  function contactToOutlookRow(c) {
+    const map = {
+      'First Name':               c.firstName,
+      'Middle Name':              c.middleName,
+      'Last Name':                c.lastName,
+      'E-mail Address':           c.email1,
+      'E-mail 2 Address':         c.email2,
+      'E-mail 3 Address':         c.email3,
+      'Mobile Phone':             c.mobile,
+      'Business Phone':           c.business,
+      'Home Phone':               c.home,
+      'Company':                  c.org,
+      'Job Title':                c.title,
+      'Business Street':          c.bStreet,
+      'Business City':            c.bCity,
+      'Business State':           c.bState,
+      'Business Postal Code':     c.bZip,
+      'Business Country/Region':  c.bCountry,
+      'Notes':                    c.note,
+    };
+    return OUTLOOK_HEADERS.map(h => csvCell(map[h] || ''));
+  }
+
+  /* ── RENDER CSV ── */
+  function renderCSV() {
+    const header = OUTLOOK_HEADERS.map(csvCell).join(',');
+    const rows = contacts.map(c => contactToOutlookRow(c).join(','));
+    const csv = [header, ...rows].join('\n');
+    document.getElementById('csvOutput').value = csv;
+
+    const hasData = contacts.length > 0;
+    document.getElementById('downloadBtn').disabled = !hasData;
+    document.getElementById('copyBtn').disabled = !hasData;
+  }
+
+  /* ── CSV CELL ESCAPE ── */
+  function csvCell(val) {
+    val = (val || '').replace(/"/g, '""');
+    if (val.includes(',') || val.includes('"') || val.includes('\n')) {
+      val = `"${val}"`;
+    }
+    return val;
+  }
+
+  /* ── DOWNLOAD CSV ── */
+  function downloadCSV() {
+    const csv = document.getElementById('csvOutput').value;
+    const bom = '\uFEFF'; // UTF-8 BOM for Excel
+    const blob = new Blob([bom + csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'kontakty.csv';
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  /* ── COPY CSV ── */
+  function copyCSV() {
+    const csv = document.getElementById('csvOutput').value;
+    navigator.clipboard.writeText(csv).then(() => {
+      const btn = document.getElementById('copyBtn');
+      const orig = btn.textContent;
+      btn.textContent = '✅ Skopiowano!';
+      setTimeout(() => btn.textContent = orig, 1800);
+    });
+  }
+
+  /* ── CLEAR ── */
+  function clearAll() {
+    contacts = [];
+    document.getElementById('fileInput').value = '';
+    renderTable();
+    document.getElementById('csvOutput').value = '';
+    document.getElementById('downloadBtn').disabled = true;
+    document.getElementById('copyBtn').disabled = true;
+  }
+
+  /* ── UTILS ── */
+  function esc(s) {
+    return (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+</script>
+</body>
+</html>
